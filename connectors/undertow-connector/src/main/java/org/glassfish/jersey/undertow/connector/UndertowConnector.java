@@ -103,32 +103,43 @@ class UndertowConnector implements Connector {
             public void completed(final ClientConnection undertowConnection) {
                 undertowConnection.sendRequest(toUndertowRequest(request), new ClientCallback<ClientExchange>() {
                     @Override
-                    public void completed(ClientExchange clientExchange) {
-                        //TODO
-                        //result == clientExchange
-//                        result.setResponseListener(new ResponseCallback(exchange));
-//                        IoExceptionHandler handler = new IoExceptionHandler(exchange, clientConnection.getConnection());
-//                        ChannelListeners.initiateTransfer(Long.MAX_VALUE, exchange.getRequestChannel(), result.getRequestChannel(), ChannelListeners.closingChannelListener(), new HTTPTrailerChannelListener(exchange, result), handler, handler, exchange.getConnection().getBufferPool());
+                    public void completed(final ClientExchange clientExchange) {
+                        clientExchange.setResponseListener( new ClientCallback<ClientExchange>() {
+                            @Override
+                            public void completed(ClientExchange result) {
+                                io.undertow.client.ClientResponse undertowResponse = result.getResponse();
+                                final ClientResponse jerseyResponse = new ClientResponse(
+                                        Statuses.from(undertowResponse.getResponseCode(),
+                                                undertowResponse.getStatus()),
+                                        request);
+                                MultivaluedMap<String, String> jerseyHeaders = jerseyResponse.getHeaders();
+                                for (HeaderValues headerValues : undertowResponse.getResponseHeaders()) {
+                                    String headerName = headerValues.getHeaderName().toString();
+                                    List<String> values = jerseyHeaders.get(headerName);
+                                    if (values == null) {
+                                        values = new ArrayList<String>();
+                                        jerseyHeaders.put(headerName, values);
+                                    }
+                                    values.addAll(headerValues);
+                                }
+                                jerseyResponse.setEntityStream(new ChannelInputStream(result.getResponseChannel()));
 
-                        io.undertow.client.ClientResponse undertowResponse = clientExchange.getResponse();
-                        final ClientResponse jerseyResponse = new ClientResponse(
-                                Statuses.from(undertowResponse.getResponseCode(),
-                                        undertowResponse.getStatus()),
-                                request);
-                        MultivaluedMap<String, String> jerseyHeaders = jerseyResponse.getHeaders();
-                        for (HeaderValues headerValues : undertowResponse.getResponseHeaders()) {
-                            String headerName = headerValues.getHeaderName().toString();
-                            List<String> values = jerseyHeaders.get(headerName);
-                            if (values == null) {
-                                values = new ArrayList<String>();
-                                jerseyHeaders.put(headerName, values);
+                                callback.response(jerseyResponse);
+                                responseFuture.set(jerseyResponse);
                             }
-                            values.addAll(headerValues);
-                        }
-                        jerseyResponse.setEntityStream(new ChannelInputStream(clientExchange.getResponseChannel()));
 
-                        callback.response(jerseyResponse);
-                        responseFuture.set(jerseyResponse);
+                            @Override
+                            public void failed(IOException e) {
+                                callback.failure(e);
+                                responseFuture.setException(e);
+                            }
+                        });
+
+                        //TODO
+//                        IoExceptionHandler handler = new IoExceptionHandler(exchange, clientConnection.getConnection());
+                        ChannelListeners.initiateTransfer(Long.MAX_VALUE, clientExchange.getRequestChannel(), result.getRequestChannel(), ChannelListeners.closingChannelListener(), new HTTPTrailerChannelListener(exchange, result), handler, handler, exchange.getConnection().getBufferPool());
+
+
                     }
 
                     @Override
