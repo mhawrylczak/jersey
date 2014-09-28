@@ -34,9 +34,9 @@ class UndertowConnector implements Connector {
 
     private Xnio xnio;
     private XnioWorker worker;
-    private int ioThreads;
-    private int workerThreads;
-    private OptionMap workerOptions;
+    private int ioThreads=2;
+    private int workerThreads=8;
+    private OptionMap workerOptions = OptionMap.builder().getMap();
     private boolean directBuffers = true;
     private int bufferSize = 1024 * 16;
     private int buffersPerRegion = 20;
@@ -166,7 +166,9 @@ class UndertowConnector implements Connector {
 
     @Override
     public void close() {
-
+        worker.shutdownNow();
+        worker = null;
+        xnio = null;
     }
 
     @Override
