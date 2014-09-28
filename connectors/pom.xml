@@ -60,6 +60,7 @@
         <module>grizzly-connector</module>
         <module>apache-connector</module>
         <module>jetty-connector</module>
+		<module>undertow-connector</module>
     </modules>
 
     <dependencies>
