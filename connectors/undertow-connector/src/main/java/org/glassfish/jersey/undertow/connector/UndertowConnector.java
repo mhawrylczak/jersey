@@ -1,49 +1,33 @@
-
 package org.glassfish.jersey.undertow.connector;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
-
-import javax.ws.rs.ProcessingException;
-import javax.ws.rs.client.Client;
-import javax.ws.rs.core.Configuration;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.Response;
 
 import io.undertow.client.ClientCallback;
 import io.undertow.client.ClientConnection;
 import io.undertow.client.ClientExchange;
 import io.undertow.client.UndertowClient;
 import io.undertow.util.HeaderValues;
-import org.glassfish.jersey.client.ClientProperties;
+import io.undertow.util.HttpString;
+import jersey.repackaged.com.google.common.util.concurrent.SettableFuture;
 import org.glassfish.jersey.client.ClientRequest;
 import org.glassfish.jersey.client.ClientResponse;
-import org.glassfish.jersey.client.RequestEntityProcessing;
 import org.glassfish.jersey.client.spi.AsyncConnectorCallback;
 import org.glassfish.jersey.client.spi.Connector;
 import org.glassfish.jersey.internal.Version;
-import org.glassfish.jersey.internal.util.collection.ByteBufferInputStream;
-import org.glassfish.jersey.internal.util.collection.NonBlockingInputStream;
 import org.glassfish.jersey.message.internal.HeaderUtils;
-import org.glassfish.jersey.message.internal.OutboundMessageContext;
 import org.glassfish.jersey.message.internal.Statuses;
 import org.xnio.*;
 import org.xnio.streams.ChannelInputStream;
 
-import jersey.repackaged.com.google.common.util.concurrent.SettableFuture;
+import javax.ws.rs.ProcessingException;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.core.Configuration;
+import javax.ws.rs.core.MultivaluedMap;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 
 class UndertowConnector implements Connector {
@@ -91,17 +75,33 @@ class UndertowConnector implements Connector {
 
     @Override
     public ClientResponse apply(ClientRequest request) {
-       return null;
+        Future<ClientResponse> resp = (Future<ClientResponse>) apply(request, new AsyncConnectorCallback() {
+            @Override
+            public void response(ClientResponse response) {
+            }
+
+            @Override
+            public void failure(Throwable failure) {
+            }
+        });
+        try {
+            return resp.get();
+        } catch (InterruptedException e) {
+            throw new ProcessingException(e);
+        } catch (ExecutionException e) {
+            throw new ProcessingException(e.getCause());
+        }
     }
 
 
     @Override
     public Future<?> apply(final ClientRequest request, final AsyncConnectorCallback callback) {
         final SettableFuture<ClientResponse> responseFuture = SettableFuture.create();
+
         undertowClient.connect(new ClientCallback<ClientConnection>() {
             @Override
-            public void completed(final ClientConnection clientConnection) {
-                clientConnection.sendRequest( undertowRequest(request), new ClientCallback<ClientExchange>() {
+            public void completed(final ClientConnection undertowConnection) {
+                undertowConnection.sendRequest(toUndertowRequest(request), new ClientCallback<ClientExchange>() {
                     @Override
                     public void completed(ClientExchange clientExchange) {
                         io.undertow.client.ClientResponse undertowResponse = clientExchange.getResponse();
@@ -110,10 +110,10 @@ class UndertowConnector implements Connector {
                                         undertowResponse.getStatus()),
                                 request);
                         MultivaluedMap<String, String> jerseyHeaders = jerseyResponse.getHeaders();
-                        for(HeaderValues headerValues : undertowResponse.getResponseHeaders()){
+                        for (HeaderValues headerValues : undertowResponse.getResponseHeaders()) {
                             String headerName = headerValues.getHeaderName().toString();
                             List<String> values = jerseyHeaders.get(headerName);
-                            if (values == null){
+                            if (values == null) {
                                 values = new ArrayList<String>();
                                 jerseyHeaders.put(headerName, values);
                             }
@@ -142,6 +142,25 @@ class UndertowConnector implements Connector {
 
 
         return responseFuture;
+    }
+
+    private io.undertow.client.ClientRequest toUndertowRequest(ClientRequest jerseyRequest) {
+        final io.undertow.client.ClientRequest request = new io.undertow.client.ClientRequest();
+        request.setPath(jerseyRequest.getUri().toString())
+                .setMethod(HttpString.tryFromString(jerseyRequest.getMethod()));
+
+        MultivaluedMap<String, String> stringHeaders = HeaderUtils.asStringHeaders(jerseyRequest.getHeaders());
+        for (Map.Entry<String, List<String>> entry : stringHeaders.entrySet()) {
+            HeaderValues values = request.getRequestHeaders().get(entry.getKey());
+            if (values == null) {
+                request.getRequestHeaders().putAll(HttpString.tryFromString(entry.getKey()), entry.getValue());
+            }else{
+                values.addAll(entry.getValue());
+            }
+
+        }
+
+        return request;
     }
 
 
