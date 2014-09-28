@@ -104,6 +104,12 @@ class UndertowConnector implements Connector {
                 undertowConnection.sendRequest(toUndertowRequest(request), new ClientCallback<ClientExchange>() {
                     @Override
                     public void completed(ClientExchange clientExchange) {
+                        //TODO
+                        //result == clientExchange
+//                        result.setResponseListener(new ResponseCallback(exchange));
+//                        IoExceptionHandler handler = new IoExceptionHandler(exchange, clientConnection.getConnection());
+//                        ChannelListeners.initiateTransfer(Long.MAX_VALUE, exchange.getRequestChannel(), result.getRequestChannel(), ChannelListeners.closingChannelListener(), new HTTPTrailerChannelListener(exchange, result), handler, handler, exchange.getConnection().getBufferPool());
+
                         io.undertow.client.ClientResponse undertowResponse = clientExchange.getResponse();
                         final ClientResponse jerseyResponse = new ClientResponse(
                                 Statuses.from(undertowResponse.getResponseCode(),
